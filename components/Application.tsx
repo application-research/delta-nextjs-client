@@ -10,8 +10,17 @@ import DefaultLayout from '@components/DefaultLayout';
 import SceneDatasets from '@components/SceneDatasets';
 import SceneProviders from '@components/SceneProviders';
 import SceneReplications from '@components/SceneReplications';
+import SceneWallets from '@components/SceneWallets';
 
 import FormUploadData from '@components/FormUploadData';
+import FormAddWallet from '@components/FormAddWallet';
+import FormAddProvider from '@components/FormAddProvider';
+
+import { navigationStates, tooltipStates } from '@common/navigation';
+import SceneAuth from '@components/SceneAuth';
+import FormNewDataset from '@components/FormNewDataset';
+import { getCookie, setCookie } from '@root/modules/cookies';
+import { checkAuth } from '@root/data/api';
 
 export default function Application(props) {
   const [appNavigationState, setAppNavigationState] = React.useState(1);
@@ -19,22 +28,61 @@ export default function Application(props) {
   const [providerValue, setProviderChange] = React.useState('');
   const [selectedProvider, setSelectedProvider] = React.useState('');
   const [selectedData, setSelectedData] = React.useState('');
-  const [state, setState] = React.useState({ data: [], providers: [], replications: [] });
+  const [state, setState] = React.useState({ datasets: [], providers: [], replications: [] });
   const [appTooltipState, setAppTooltipState] = React.useState(0);
+  const [authToken, setAuthTokenEphemeral] = React.useState('');
+  const setAuthToken = authToken => {
+    setAuthTokenEphemeral(authToken);
+    setCookie('auth', authToken);
+  }
+
+  async function updateState() {
+    const apiURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1314/api/v1";
+    const datasetsRes = await fetch(apiURL + "/datasets");
+    const providersRes = await fetch(apiURL + "/providers");
+    const replicationsRes = await fetch(apiURL + "/replication");
+
+    setState({
+      datasets: await datasetsRes.json(),
+      providers: await providersRes.json(),
+      replications: await replicationsRes.json(),
+    });
+  }
+
+  function dismissTooltip() {
+    setAppTooltipState(0);
+  }
 
   React.useEffect(() => {
-    // TODO(alvin, json, cake):
-    // You can insert the hydration point here, and all page updates here.
-    // You could use websockets, or something else, whatever you desire.
-    async function init() {
-      const response = await fetch('/api');
-      const json = await response.json();
+    (async () => {
+      setAuthToken(getCookie('auth'));
 
-      setState({ data: [...json.response.data], providers: [...json.response.providers], replications: [...json.response.replications] });
-    }
-
-    init();
+      try {
+        if (!await checkAuth()) {
+          throw new Error();
+        }
+      } catch {
+        setAuthToken('');
+        alert('Cached authorization token was invalid');
+        return;
+      }
+    })()
   }, []);
+
+  React.useEffect(() => {
+    if (authToken) {
+      updateState();
+    }
+  }, [authToken]);
+
+  if (!authToken) {
+    return (
+      <SceneAuth
+        authToken={authToken}
+        setAuthToken={setAuthToken}
+      ></SceneAuth>
+    )
+  }
 
   return (
     <DefaultLayout
@@ -42,14 +90,15 @@ export default function Application(props) {
       appVersion={PackageJSON.version}
       appNavigationState={appNavigationState}
       appTooltipState={appTooltipState}
-      onClickDatasets={() => setAppNavigationState(1)}
-      onClickProviders={() => setAppNavigationState(2)}
-      onClickReplications={() => setAppNavigationState(3)}
-      onUploadData={() => setAppTooltipState(1)}
-      onImportData={() => alert('work in progress')}
-      onAddProviders={() => alert('work in progress')}
+      onClickDatasets={() => setAppNavigationState(navigationStates.datasets)}
+      onClickProviders={() => setAppNavigationState(navigationStates.providers)}
+      onClickReplications={() => setAppNavigationState(navigationStates.replications)}
+      onNewDataset={() => setAppTooltipState(tooltipStates.newDataset)}
+      onAddProviders={() => setAppTooltipState(tooltipStates.addProvider)}
+      onClickWallets={() => setAppNavigationState(navigationStates.wallets)}
+      onAddWallet={() => setAppTooltipState(tooltipStates.addWallet)}
     >
-      {appNavigationState === 1 ? (
+      {appNavigationState === navigationStates.datasets && (
         <SceneDatasets
           onSearchChange={(e) => setSearchChange(e.target.value)}
           searchValue={searchValue}
@@ -57,8 +106,8 @@ export default function Application(props) {
           placeholder="(example: university-bird-sounds.zip)"
           state={state}
         />
-      ) : null}
-      {appNavigationState === 2 ? (
+      )}
+      {appNavigationState === navigationStates.providers && (
         <SceneProviders
           onProviderChange={(e) => setProviderChange(e.target.value)}
           providerChange={providerValue}
@@ -66,25 +115,37 @@ export default function Application(props) {
           placeholder="(example: f0123456)"
           state={state}
         />
-      ) : null}
-      {appNavigationState === 3 ? (
+      )}
+      {appNavigationState === navigationStates.replications && (
         <SceneReplications
           selectedProvider={selectedProvider}
           setSelectedProvider={() => {
             alert('test');
           }}
           selectedData={selectedData}
-          setSelectedData={() => {}}
+          setSelectedData={() => { }}
           state={state}
         />
-      ) : null}
-      {appTooltipState === 1 ? (
-        <FormUploadData
-          onOutsideClick={(event) => {
-            setAppTooltipState(0);
-          }}
+      )}
+      {appNavigationState === navigationStates.wallets && (
+        <SceneWallets />
+      )}
+
+      {appTooltipState === tooltipStates.newDataset && (
+        <FormNewDataset
+          onOutsideClick={dismissTooltip}
+          updateState={updateState}
         />
-      ) : null}
+      )}
+      {appTooltipState === tooltipStates.addProvider && (
+        <FormAddProvider
+          onOutsideClick={dismissTooltip}
+          updateState={updateState}
+        />
+      )}
+      {appTooltipState === tooltipStates.addWallet && (
+        <FormAddWallet onOutsideClick={dismissTooltip} />
+      )}
     </DefaultLayout>
   );
 }
